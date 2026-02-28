@@ -1,0 +1,21 @@
+# Secrets
+backend/.env
+
+# 
+backend/GeoLite2-City.mmdb
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Node
+node_modules/
+.next/
+
+# Claude
+Claude.md
+.claude/
+.internal/
