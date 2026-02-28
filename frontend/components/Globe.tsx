@@ -1,12 +1,11 @@
 'use client'
 
 import createGlobe from 'cobe'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { AttackEvent, GlobeArc } from '@/types'
 
-// Arc rendering constants
-const ARC_SEGMENTS = 64     // path resolution
-const ARC_ALTITUDE = 0.35   // how high arcs lift above the globe surface
+const ARC_SEGMENTS = 64
+const ARC_ALTITUDE = 0.35
 
 // Cloudflare PoP destinations shown as fixed markers
 const POP_MARKERS = [
@@ -19,13 +18,18 @@ const POP_MARKERS = [
 
 // ── Math helpers ───────────────────────────────────────────────────────────────
 
+// cobe's internal 3D convention (verified from minified source):
+//   x = cos(lat) * cos(lng)
+//   y = sin(lat)
+//   z = -cos(lat) * sin(lng)
+// Different from the standard geographic convention — must match exactly.
 function toVec3(lat: number, lng: number): [number, number, number] {
   const phi    = (lat * Math.PI) / 180
   const lambda = (lng * Math.PI) / 180
   return [
-    Math.cos(phi) * Math.sin(lambda),
-    Math.sin(phi),
     Math.cos(phi) * Math.cos(lambda),
+    Math.sin(phi),
+    -Math.cos(phi) * Math.sin(lambda),
   ]
 }
 
@@ -43,28 +47,46 @@ function slerp(
   return [fa*a[0] + fb*b[0], fa*a[1] + fb*b[1], fa*a[2] + fb*b[2]]
 }
 
-// Rotate vector around Y axis by phi (matches cobe's globe rotation)
+// Standard Y-axis rotation — matches cobe's J(theta, phi) matrix's phi columns:
+//   x' =  x*cos(phi) + z*sin(phi)
+//   z' = -x*sin(phi) + z*cos(phi)
 function rotateY(
   v: [number, number, number],
   phi: number,
 ): [number, number, number] {
   const [x, y, z] = v
   return [
-    x * Math.cos(phi) - z * Math.sin(phi),
+    x * Math.cos(phi) + z * Math.sin(phi),
     y,
-    x * Math.sin(phi) + z * Math.cos(phi),
+    -x * Math.sin(phi) + z * Math.cos(phi),
   ]
 }
 
-// Orthographic projection to canvas space
+// X-axis rotation — matches cobe's J(theta, phi) matrix's theta columns.
+// Applied after Y rotation to reproduce cobe's full transform: R_x(theta) * R_y(phi).
+function rotateX(
+  v: [number, number, number],
+  theta: number,
+): [number, number, number] {
+  const [x, y, z] = v
+  return [
+    x,
+    y * Math.cos(theta) - z * Math.sin(theta),
+    y * Math.sin(theta) + z * Math.cos(theta),
+  ]
+}
+
+// Orthographic projection to canvas pixel space.
+// cobe's sphere occupies 80% of the canvas (sphere diameter = 0.8 * canvas_size),
+// so the correct scale factor is 0.4 (radius = 40% of canvas), NOT 0.5.
 function project(
   vec: [number, number, number],
   pxSize: number,
 ): { x: number; y: number; visible: boolean } {
   const [rx, ry, rz] = vec
   return {
-    x: (0.5 + rx / 2) * pxSize,
-    y: (0.5 - ry / 2) * pxSize,
+    x: (0.5 + rx * 0.4) * pxSize,
+    y: (0.5 - ry * 0.4) * pxSize,
     visible: rz > 0,
   }
 }
@@ -89,50 +111,54 @@ export default function Globe({ arcs, onArcClick }: GlobeProps) {
   const globeRef      = useRef<HTMLCanvasElement>(null)
   const overlayRef    = useRef<HTMLCanvasElement>(null)
   const phiRef        = useRef(0)
+  const thetaRef      = useRef(0.3)   // kept in sync with cobe's theta uniform
   const arcsRef       = useRef(arcs)
   const hitTargets    = useRef<HitTarget[]>([])
+  const isDraggingRef = useRef(false)
+  const dragStartRef  = useRef({ x: 0, y: 0 })
+  const lastPosRef    = useRef({ x: 0, y: 0 })
+  const [dragging, setDragging] = useState(false)
 
   // Keep arcsRef current without re-creating the globe
   useEffect(() => { arcsRef.current = arcs }, [arcs])
 
   useEffect(() => {
-    const container = containerRef.current!
+    const container   = containerRef.current!
     const globeCanvas = globeRef.current!
-    const overlay = overlayRef.current!
+    const overlay     = overlayRef.current!
 
-    const logicalSize = container.clientWidth || 600
-    const dpr = window.devicePixelRatio || 1
-    const pxSize = logicalSize * dpr
+    const logicalSize = container.clientWidth || container.clientHeight || 600
+    const dpr         = window.devicePixelRatio || 1
+    const pxSize      = logicalSize * dpr
 
-    // Size the overlay canvas
+    // Size the overlay canvas to match globe resolution, fill container via CSS
     overlay.width  = pxSize
     overlay.height = pxSize
-    overlay.style.width  = `${logicalSize}px`
-    overlay.style.height = `${logicalSize}px`
+    overlay.style.width  = '100%'
+    overlay.style.height = '100%'
 
     const globe = createGlobe(globeCanvas, {
       devicePixelRatio: dpr,
-      width:  pxSize,
-      height: pxSize,
-      phi:    0,
-      theta:  0.3,
-      dark:   1,
+      width:   pxSize,
+      height:  pxSize,
+      phi:     0,
+      theta:   thetaRef.current,
+      dark:    1,
       diffuse: 1.2,
-      mapSamples: 16000,
+      mapSamples:    16000,
       mapBrightness: 6,
       baseColor:   [0.04, 0.04, 0.12],
-      markerColor: [0.25, 0.65, 1.0],   // cyan — Cloudflare PoP colour
+      markerColor: [0.25, 0.65, 1.0],
       glowColor:   [0.08, 0.15, 0.6],
       markers: POP_MARKERS,
       onRender(state) {
+        // Always auto-rotate — drag input adds on top in pointer handlers
         phiRef.current += 0.003
-        state.phi = phiRef.current
-        drawArcs(overlay, phiRef.current, logicalSize, dpr)
+        state.phi   = phiRef.current
+        state.theta = thetaRef.current   // push current theta into cobe each frame
+        drawArcs(overlay, phiRef.current, thetaRef.current, logicalSize, dpr)
       },
     })
-
-    globeCanvas.style.width  = `${logicalSize}px`
-    globeCanvas.style.height = `${logicalSize}px`
 
     return () => globe.destroy()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -142,6 +168,7 @@ export default function Globe({ arcs, onArcClick }: GlobeProps) {
   function drawArcs(
     canvas: HTMLCanvasElement,
     phi: number,
+    theta: number,
     logicalSize: number,
     dpr: number,
   ) {
@@ -157,7 +184,7 @@ export default function Globe({ arcs, onArcClick }: GlobeProps) {
       const startVec = toVec3(arc.startLat, arc.startLng)
       const endVec   = toVec3(arc.endLat,   arc.endLng)
 
-      // Build screen-space path along the great circle with altitude lift
+      // Build screen-space path: great-circle slerp + altitude lift + full rotation
       const pts: Array<{ x: number; y: number; visible: boolean }> = []
       for (let i = 0; i <= ARC_SEGMENTS; i++) {
         const t      = i / ARC_SEGMENTS
@@ -168,7 +195,8 @@ export default function Globe({ arcs, onArcClick }: GlobeProps) {
           interp[1] * alt,
           interp[2] * alt,
         ]
-        pts.push(project(rotateY(lifted, phi), pxSize))
+        // Apply both rotations to match cobe's transform: R_x(theta) * R_y(phi)
+        pts.push(project(rotateX(rotateY(lifted, phi), theta), pxSize))
       }
 
       // Register hit target at arc source (attacker) — in logical pixels
@@ -210,9 +238,38 @@ export default function Globe({ arcs, onArcClick }: GlobeProps) {
     hitTargets.current = newHitTargets
   }
 
+  // ── Pointer / drag handling ───────────────────────────────────────────────────
+
+  function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    isDraggingRef.current = true
+    setDragging(true)
+    dragStartRef.current = { x: e.clientX, y: e.clientY }
+    lastPosRef.current   = { x: e.clientX, y: e.clientY }
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+
+  function handlePointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!isDraggingRef.current) return
+    const dx = e.clientX - lastPosRef.current.x
+    const dy = e.clientY - lastPosRef.current.y
+    lastPosRef.current = { x: e.clientX, y: e.clientY }
+    phiRef.current   += dx * 0.008
+    thetaRef.current  = Math.max(-0.5, Math.min(0.5, thetaRef.current + dy * 0.008))
+  }
+
+  function handlePointerUp() {
+    isDraggingRef.current = false
+    setDragging(false)
+  }
+
   // ── Click handling ───────────────────────────────────────────────────────────
 
   function handleClick(e: React.MouseEvent<HTMLDivElement>) {
+    // Ignore click if the pointer actually moved (was a drag, not a tap)
+    const dx = e.clientX - dragStartRef.current.x
+    const dy = e.clientY - dragStartRef.current.y
+    if (Math.hypot(dx, dy) > 5) return
+
     const rect = e.currentTarget.getBoundingClientRect()
     const x = e.clientX - rect.left
     const y = e.clientY - rect.top
@@ -231,7 +288,7 @@ export default function Globe({ arcs, onArcClick }: GlobeProps) {
   return (
     <div
       ref={containerRef}
-      className="relative w-full aspect-square max-w-2xl mx-auto select-none"
+      className="relative aspect-square h-full max-w-full select-none"
     >
       {/* cobe WebGL globe */}
       <canvas
@@ -239,16 +296,20 @@ export default function Globe({ arcs, onArcClick }: GlobeProps) {
         className="absolute inset-0"
         style={{ width: '100%', height: '100%' }}
       />
-      {/* 2D arc overlay — pointer-events off so cobe receives mouse events */}
+      {/* 2D arc overlay — pointer-events off so drag/click reach the div below */}
       <canvas
         ref={overlayRef}
         className="absolute inset-0 pointer-events-none"
         style={{ width: '100%', height: '100%' }}
       />
-      {/* Transparent click capture div */}
+      {/* Interaction capture */}
       <div
-        className="absolute inset-0 cursor-crosshair"
+        className={`absolute inset-0 ${dragging ? 'cursor-grabbing' : 'cursor-grab'}`}
         onClick={handleClick}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerUp}
       />
     </div>
   )

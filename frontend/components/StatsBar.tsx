@@ -1,13 +1,29 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Shield, Bell, User } from 'lucide-react'
+import { Shield } from 'lucide-react'
+import type { Stats, ThreatLevel } from '@/types'
+
+// Convert 2-letter ISO country code → flag emoji
+function countryFlag(code: string): string {
+  return [...code.toUpperCase()]
+    .map(c => String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65))
+    .join('')
+}
+
+const THREAT_STYLES: Record<ThreatLevel, { dot: string; text: string; ring: string }> = {
+  LOW:      { dot: 'bg-emerald-400',                    text: 'text-emerald-400', ring: 'ring-emerald-500/30' },
+  MODERATE: { dot: 'bg-yellow-400',                     text: 'text-yellow-400',  ring: 'ring-yellow-500/30'  },
+  HIGH:     { dot: 'bg-orange-400',                     text: 'text-orange-400',  ring: 'ring-orange-500/30'  },
+  CRITICAL: { dot: 'bg-red-500 animate-pulse',          text: 'text-red-400',     ring: 'ring-red-500/40'     },
+}
 
 interface HeaderProps {
   isConnected: boolean
+  stats?: Stats
 }
 
-export default function Header({ isConnected }: HeaderProps) {
+export default function Header({ isConnected, stats }: HeaderProps) {
   const [time, setTime] = useState('')
 
   useEffect(() => {
@@ -18,10 +34,13 @@ export default function Header({ isConnected }: HeaderProps) {
     return () => clearInterval(t)
   }, [])
 
+  const threat = stats ? THREAT_STYLES[stats.threat_level] : null
+
   return (
-    <header className="h-14 border-b border-slate-800 bg-slate-950 flex items-center justify-between px-6 shrink-0 z-50">
+    <header className="h-14 border-b border-slate-800 bg-slate-950 flex items-center px-6 gap-6 shrink-0 z-50">
+
       {/* Brand */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3 shrink-0">
         <div className="w-8 h-8 bg-emerald-500/10 rounded-lg flex items-center justify-center border border-emerald-500/20">
           <Shield className="w-5 h-5 text-emerald-500" />
         </div>
@@ -29,35 +48,66 @@ export default function Header({ isConnected }: HeaderProps) {
           <h1 className="font-bold text-lg tracking-tight text-slate-100 leading-none font-mono">
             SENTINEL <span className="text-emerald-500 text-xs align-top">PRO</span>
           </h1>
-          <div className="text-[10px] text-slate-500 font-mono uppercase tracking-widest leading-none mt-1">
+          <div className="text-[10px] text-slate-500 font-mono uppercase tracking-widest leading-none mt-0.5">
             Global Threat Intelligence
           </div>
         </div>
       </div>
 
-      {/* Right: clock + status + icons */}
-      <div className="flex items-center gap-6 text-slate-400">
+      <div className="h-6 w-px bg-slate-800 shrink-0" />
+
+      {/* Live stats — center, flex-1 so it fills available space */}
+      <div className="flex-1 flex items-center gap-5 min-w-0">
+        {stats && threat ? (
+          <>
+            {/* Threat level pill */}
+            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono font-bold ring-1 bg-slate-900/80 shrink-0 ${threat.ring}`}>
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${threat.dot}`} />
+              <span className={threat.text}>{stats.threat_level}</span>
+            </div>
+
+            <div className="h-4 w-px bg-slate-800 shrink-0" />
+
+            {/* Attacks / min */}
+            <div className="flex items-baseline gap-1 shrink-0">
+              <span className="text-sm font-mono font-bold text-slate-200">{stats.attacks_per_min.toLocaleString()}</span>
+              <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">/min</span>
+            </div>
+
+            <div className="h-4 w-px bg-slate-800 shrink-0" />
+
+            {/* Top 3 attacking countries */}
+            <div className="flex items-center gap-3 min-w-0 overflow-hidden">
+              {stats.top_countries.slice(0, 3).map((c, i) => (
+                <span key={c.country} className="flex items-center gap-1 text-xs font-mono text-slate-400 shrink-0">
+                  {i > 0 && <span className="text-slate-700">·</span>}
+                  <span>{countryFlag(c.country)}</span>
+                  <span className="text-slate-300">{c.country}</span>
+                  <span className="text-slate-600">{c.count}</span>
+                </span>
+              ))}
+            </div>
+          </>
+        ) : (
+          <span className="text-xs font-mono text-slate-600 animate-pulse">Awaiting stream…</span>
+        )}
+      </div>
+
+      {/* Clock + connection */}
+      <div className="flex items-center gap-5 shrink-0">
         <div className="text-right hidden sm:block">
           <div className="text-xs font-mono text-slate-300">{time}</div>
-          <div className="text-[10px] text-slate-600 font-mono">LOCAL</div>
+          <div className="text-[10px] text-slate-600 font-mono">UTC LOCAL</div>
         </div>
 
-        {/* Connection status */}
         <div className="flex items-center gap-1.5 text-xs font-mono">
           <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'}`} />
           <span className={isConnected ? 'text-emerald-400' : 'text-amber-400'}>
             {isConnected ? 'LIVE' : 'RECONNECTING'}
           </span>
         </div>
-
-        <button className="p-2 hover:bg-slate-800 rounded-full transition-colors relative">
-          <Bell className="w-5 h-5" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-slate-950" />
-        </button>
-        <div className="w-8 h-8 bg-slate-800 rounded-full flex items-center justify-center border border-slate-700">
-          <User className="w-4 h-4" />
-        </div>
       </div>
+
     </header>
   )
 }

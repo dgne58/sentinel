@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { Activity, ShieldCheck } from 'lucide-react'
+import { Activity } from 'lucide-react'
 import type { AttackEvent } from '@/types'
 
 function relativeTime(iso: string): string {
@@ -49,7 +49,7 @@ export default function Feed({ feed, onEventClick }: FeedProps) {
         <div className="col-span-2">Time</div>
         <div className="col-span-3">Source IP</div>
         <div className="col-span-3">Country</div>
-        <div className="col-span-2 text-center">Score</div>
+        <div className="col-span-2">Score</div>
         <div className="col-span-2 text-right">PoP</div>
       </div>
 
@@ -76,24 +76,34 @@ export default function Feed({ feed, onEventClick }: FeedProps) {
                     : 'bg-slate-800/30 border-slate-800 text-slate-400 hover:bg-slate-800/60'
                 }`}
               >
-                <div className="col-span-2 opacity-70 truncate">
+                <div className="col-span-2 opacity-70 truncate self-center">
                   {relativeTime(from.last_reported)}
                 </div>
-                <div className="col-span-3 truncate text-slate-300" title={from.ip}>
+                <div className="col-span-3 truncate text-slate-300 self-center" title={from.ip}>
                   {from.ip}
                 </div>
-                <div className="col-span-3 truncate" title={from.country}>
+                <div className="col-span-3 truncate self-center" title={from.country}>
                   {from.country}
                 </div>
-                <div className="col-span-2 text-center flex items-center justify-center gap-1">
-                  {isHigh ? (
-                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shrink-0" />
-                  ) : (
-                    <ShieldCheck className="w-3 h-3 text-emerald-500 shrink-0" />
-                  )}
-                  <span style={{ color }}>{from.score.toFixed(2)}</span>
+
+                {/* Score bar + number */}
+                <div className="col-span-2 flex flex-col justify-center gap-0.5 px-0.5">
+                  <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full"
+                      style={{
+                        width: `${from.score * 100}%`,
+                        backgroundColor: color,
+                        boxShadow: `0 0 4px ${color}80`,
+                      }}
+                    />
+                  </div>
+                  <span className="text-[10px] font-mono leading-none" style={{ color }}>
+                    {from.score.toFixed(2)}
+                  </span>
                 </div>
-                <div className="col-span-2 text-right text-slate-500 truncate">
+
+                <div className="col-span-2 text-right text-slate-500 truncate self-center">
                   {to.pop}
                 </div>
               </button>
