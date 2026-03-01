@@ -2,7 +2,7 @@
 
 import createGlobe from 'cobe'
 import { useEffect, useRef, useState } from 'react'
-import type { AttackEvent, GlobeArc } from '@/types'
+import type { AttackEvent, GlobeArc, HistoricalArc, ViewMode } from '@/types'
 
 const ARC_SEGMENTS = 64
 const ARC_ALTITUDE = 0.35
@@ -102,25 +102,31 @@ interface HitTarget {
 interface GlobeProps {
   arcs: GlobeArc[]
   onArcClick: (event: AttackEvent) => void
+  viewMode?: ViewMode
+  historicalArcs?: HistoricalArc[]
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export default function Globe({ arcs, onArcClick }: GlobeProps) {
-  const containerRef  = useRef<HTMLDivElement>(null)
-  const globeRef      = useRef<HTMLCanvasElement>(null)
-  const overlayRef    = useRef<HTMLCanvasElement>(null)
-  const phiRef        = useRef(0)
-  const thetaRef      = useRef(0.3)   // kept in sync with cobe's theta uniform
-  const arcsRef       = useRef(arcs)
-  const hitTargets    = useRef<HitTarget[]>([])
-  const isDraggingRef = useRef(false)
-  const dragStartRef  = useRef({ x: 0, y: 0 })
-  const lastPosRef    = useRef({ x: 0, y: 0 })
+export default function Globe({ arcs, onArcClick, viewMode = 'live', historicalArcs = [] }: GlobeProps) {
+  const containerRef      = useRef<HTMLDivElement>(null)
+  const globeRef          = useRef<HTMLCanvasElement>(null)
+  const overlayRef        = useRef<HTMLCanvasElement>(null)
+  const phiRef            = useRef(0)
+  const thetaRef          = useRef(0.3)   // kept in sync with cobe's theta uniform
+  const arcsRef           = useRef(arcs)
+  const historicalArcsRef = useRef(historicalArcs)
+  const viewModeRef       = useRef(viewMode)
+  const hitTargets        = useRef<HitTarget[]>([])
+  const isDraggingRef     = useRef(false)
+  const dragStartRef      = useRef({ x: 0, y: 0 })
+  const lastPosRef        = useRef({ x: 0, y: 0 })
   const [dragging, setDragging] = useState(false)
 
-  // Keep arcsRef current without re-creating the globe
-  useEffect(() => { arcsRef.current = arcs }, [arcs])
+  // Keep refs current without re-creating the globe
+  useEffect(() => { arcsRef.current = arcs },                 [arcs])
+  useEffect(() => { historicalArcsRef.current = historicalArcs }, [historicalArcs])
+  useEffect(() => { viewModeRef.current = viewMode },         [viewMode])
 
   useEffect(() => {
     const container   = containerRef.current!
@@ -156,7 +162,11 @@ export default function Globe({ arcs, onArcClick }: GlobeProps) {
         phiRef.current += 0.003
         state.phi   = phiRef.current
         state.theta = thetaRef.current   // push current theta into cobe each frame
-        drawArcs(overlay, phiRef.current, thetaRef.current, logicalSize, dpr)
+        if (viewModeRef.current === 'history') {
+          drawHistoricalArcs(overlay, phiRef.current, thetaRef.current, logicalSize, dpr)
+        } else {
+          drawArcs(overlay, phiRef.current, thetaRef.current, logicalSize, dpr)
+        }
       },
     })
 
@@ -236,6 +246,72 @@ export default function Globe({ arcs, onArcClick }: GlobeProps) {
     ctx.globalAlpha = 1
     ctx.shadowBlur  = 0
     hitTargets.current = newHitTargets
+  }
+
+  // ── Historical arc rendering ──────────────────────────────────────────────────
+  // Static country-level arcs — no animation, thickness + opacity encode weight.
+
+  function drawHistoricalArcs(
+    canvas: HTMLCanvasElement,
+    phi: number,
+    theta: number,
+    logicalSize: number,
+    dpr: number,
+  ) {
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    const pxSize = logicalSize * dpr
+    ctx.clearRect(0, 0, pxSize, pxSize)
+
+    for (const harc of historicalArcsRef.current) {
+      const startVec = toVec3(harc.origin.lat, harc.origin.lng)
+      const endVec   = toVec3(harc.target.lat, harc.target.lng)
+
+      const pts: Array<{ x: number; y: number; visible: boolean }> = []
+      for (let i = 0; i <= ARC_SEGMENTS; i++) {
+        const t      = i / ARC_SEGMENTS
+        const interp = slerp(startVec, endVec, t)
+        const alt    = 1 + ARC_ALTITUDE * 0.6 * Math.sin(t * Math.PI)  // lower arc than live
+        const lifted: [number, number, number] = [interp[0] * alt, interp[1] * alt, interp[2] * alt]
+        pts.push(project(rotateX(rotateY(lifted, phi), theta), pxSize))
+      }
+
+      // Thickness: 1–4px based on weight, opacity: 0.25–0.75
+      const w = Math.max(0, Math.min(1, harc.weight))
+      ctx.strokeStyle = '#818cf8'   // indigo-400 — distinct from live attack-type colors
+      ctx.lineWidth   = (1 + w * 3) * dpr
+      ctx.shadowColor = '#6366f1'
+      ctx.shadowBlur  = 4 * dpr
+      ctx.globalAlpha = 0.25 + w * 0.5
+
+      ctx.beginPath()
+      let drawing = false
+      for (const pt of pts) {
+        if (pt.visible) {
+          if (!drawing) { ctx.moveTo(pt.x, pt.y); drawing = true }
+          else ctx.lineTo(pt.x, pt.y)
+        } else {
+          if (drawing) { ctx.stroke(); ctx.beginPath(); drawing = false }
+        }
+      }
+      if (drawing) ctx.stroke()
+
+      // Dot at origin country centroid
+      const src = pts[0]
+      if (src.visible) {
+        ctx.beginPath()
+        ctx.arc(src.x, src.y, (2 + w * 2) * dpr, 0, Math.PI * 2)
+        ctx.fillStyle   = '#818cf8'
+        ctx.globalAlpha = 0.6 + w * 0.4
+        ctx.shadowBlur  = 6 * dpr
+        ctx.fill()
+      }
+    }
+
+    ctx.globalAlpha = 1
+    ctx.shadowBlur  = 0
+    hitTargets.current = []  // no click targets in history mode
   }
 
   // ── Pointer / drag handling ───────────────────────────────────────────────────

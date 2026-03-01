@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { Shield } from 'lucide-react'
-import type { Stats, ThreatLevel } from '@/types'
+import type { Stats, ThreatLevel, ViewMode } from '@/types'
 
 // Convert 2-letter ISO country code → flag emoji
 function countryFlag(code: string): string {
@@ -21,9 +21,11 @@ const THREAT_STYLES: Record<ThreatLevel, { dot: string; text: string; ring: stri
 interface HeaderProps {
   isConnected: boolean
   stats?: Stats
+  viewMode: ViewMode
+  onModeChange: (m: ViewMode) => void
 }
 
-export default function Header({ isConnected, stats }: HeaderProps) {
+export default function Header({ isConnected, stats, viewMode, onModeChange }: HeaderProps) {
   const [time, setTime] = useState('')
 
   useEffect(() => {
@@ -91,6 +93,25 @@ export default function Header({ isConnected, stats }: HeaderProps) {
         ) : (
           <span className="text-xs font-mono text-slate-600 animate-pulse">Awaiting stream…</span>
         )}
+      </div>
+
+      {/* Mode toggle */}
+      <div className="flex items-center bg-slate-900 border border-slate-800 rounded-full p-0.5 shrink-0">
+        {(['live', 'history'] as ViewMode[]).map(m => (
+          <button
+            key={m}
+            onClick={() => onModeChange(m)}
+            className={`px-3 py-1 rounded-full text-[11px] font-mono font-semibold uppercase tracking-wider transition-all ${
+              viewMode === m
+                ? m === 'live'
+                  ? 'bg-emerald-600 text-white shadow-[0_0_8px_#10b98160]'
+                  : 'bg-indigo-600 text-white shadow-[0_0_8px_#6366f160]'
+                : 'text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            {m === 'live' ? '● Live' : 'History'}
+          </button>
+        ))}
       </div>
 
       {/* Clock + connection */}

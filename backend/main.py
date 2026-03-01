@@ -17,20 +17,29 @@ import os
 from collections import deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from math import atan2, cos, radians, sin, sqrt
 from pathlib import Path
 
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
-from geolocation import cache_size as geo_cache_size, db_available, resolve_ip
-from ingestion import fetch_abuseipdb_ips, fetch_cloudflare_spike
+from analytics import build_history
+from geolocation import cache_size as geo_cache_size, db_available, nearest_pop, resolve_ip
+from ingestion import fetch_abuseipdb_ips, fetch_cloudflare_spike, fetch_sans_isc_ips
 from manager import broadcast, connect, connection_count, disconnect
-from scoring import compute_score
+from scoring import (
+    BOTNET_CATS,
+    DDOS_CATS,
+    arc_color,
+    compute_score,
+    compute_threat_level,
+    compute_top_countries,
+    primary_attack_type,
+)
+from storage import get_snapshot_count, init_db, save_snapshot
 
 logging.basicConfig(
     level=logging.INFO,
@@ -42,7 +51,7 @@ logger = logging.getLogger(__name__)
 
 event_deque: deque = deque(maxlen=500)
 
-last_poll: dict = {"cloudflare": None, "abuseipdb": None}
+last_poll: dict = {"cloudflare": None, "abuseipdb": None, "sans_isc": None}
 
 _data_source: str = "initializing"  # "live" | "fallback" | "initializing"
 
@@ -55,48 +64,6 @@ current_stats: dict = {
 }
 
 FALLBACK_PATH = Path(__file__).parent / "fallback_data.json"
-
-# ── Cloudflare PoP destinations ────────────────────────────────────────────────
-
-POPS: list[dict] = [
-    {"pop": "SJC", "name": "San Jose, CA",  "lat": 37.3382,   "lng": -121.8863},
-    {"pop": "LHR", "name": "London, UK",    "lat": 51.5074,   "lng": -0.1278},
-    {"pop": "FRA", "name": "Frankfurt, DE", "lat": 50.1109,   "lng": 8.6821},
-    {"pop": "SIN", "name": "Singapore, SG", "lat": 1.3521,    "lng": 103.8198},
-    {"pop": "SYD", "name": "Sydney, AU",    "lat": -33.8688,  "lng": 151.2093},
-]
-
-
-def _haversine(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
-    R = 6371.0
-    dlat = radians(lat2 - lat1)
-    dlng = radians(lng2 - lng1)
-    a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlng / 2) ** 2
-    return R * 2 * atan2(sqrt(a), sqrt(1 - a))
-
-
-def _nearest_pop(lat: float, lng: float) -> dict:
-    return min(POPS, key=lambda p: _haversine(lat, lng, p["lat"], p["lng"]))
-
-
-def _score_to_color(score: float) -> str:
-    if score >= 0.95:
-        return "#DC2626"   # deep red
-    if score >= 0.80:
-        return "#EF4444"   # red
-    if score >= 0.65:
-        return "#F97316"   # orange
-    return "#F59E0B"       # amber
-
-
-def _compute_threat_level(spike: bool, high_count: int, critical_count: int) -> str:
-    if spike and critical_count >= 50:
-        return "CRITICAL"
-    if spike and high_count >= 30:
-        return "HIGH"
-    if spike or high_count >= 10:
-        return "MODERATE"
-    return "LOW"
 
 
 # ── Fallback data ──────────────────────────────────────────────────────────────
@@ -135,11 +102,15 @@ async def _build_events(ip_records: list[dict], cloudflare_spike: bool) -> list[
         if lat == 0.0 and lng == 0.0:
             continue  # unresolvable IP — skip to keep globe clean
 
+        categories = record.get("categories") or []
+        attack_type = primary_attack_type(categories)
+
         score, function_tag = compute_score(
             abuse_confidence=int(record.get("abuseConfidenceScore", 0)),
             total_reports=int(record.get("totalReports", 0)),
             num_distinct_users=int(record.get("numDistinctUsers", 0)),
-            has_ddos_category=4 in (record.get("categories") or []),
+            has_ddos_category=bool(set(categories) & DDOS_CATS),
+            has_botnet_category=bool(set(categories) & BOTNET_CATS),
             last_reported_at=record.get("lastReportedAt"),
             cloudflare_spike=cloudflare_spike,
         )
@@ -147,8 +118,8 @@ async def _build_events(ip_records: list[dict], cloudflare_spike: bool) -> list[
         if function_tag == "discard":
             continue
 
-        pop = _nearest_pop(lat, lng)
-        color = _score_to_color(score)
+        pop = nearest_pop(lat, lng)
+        color = arc_color(categories)
 
         event: dict = {
             "function": function_tag,
@@ -159,18 +130,20 @@ async def _build_events(ip_records: list[dict], cloudflare_spike: bool) -> list[
             "color": {
                 "line": {"from": color, "to": color},
             },
-            "timeout": 15000,
+            "timeout": 100000,
             "options": ["line", "multi-output", "single-output"],
             "custom": {
                 "from": {
                     "ip": ip,
                     "score": score,
+                    "attack_type": attack_type,
+                    "source": record.get("source", "abuseipdb"),
                     "country": geo["country"],
                     "city": geo["city"],
                     "isp": geo["isp"],
                     "reports": record.get("totalReports", 0),
                     "distinct_reporters": record.get("numDistinctUsers", 0),
-                    "categories": record.get("categories", []),
+                    "categories": categories,
                     "last_reported": record.get("lastReportedAt", ""),
                 },
                 "to": {
@@ -187,17 +160,18 @@ async def _build_events(ip_records: list[dict], cloudflare_spike: bool) -> list[
 async def poll_and_broadcast() -> None:
     """
     One full pipeline cycle:
-      1. Fetch Cloudflare spike signal and AbuseIPDB blacklist
-      2. Enrich + score IP records into WebSocket events
-      3. Store in deque, update stats, broadcast to all clients
+      1. Fetch Cloudflare spike signal
+      2. Fetch AbuseIPDB + SANS ISC IP records in parallel
+      3. Merge, deduplicate by IP, enrich + score into WebSocket events
+      4. Store in deque, update stats, broadcast to all clients
 
-    Falls back to fallback_data.json if live fetches return nothing.
+    Falls back to fallback_data.json only if both live sources return nothing.
     """
     global current_stats, _data_source
 
     logger.info("Poll cycle starting")
 
-    # Fetch signals — each failure is handled independently
+    # Cloudflare spike — independent failure handling
     try:
         cloudflare_spike = await fetch_cloudflare_spike()
         last_poll["cloudflare"] = datetime.now(timezone.utc).isoformat()
@@ -205,20 +179,47 @@ async def poll_and_broadcast() -> None:
         logger.error("Cloudflare fetch error: %s", exc)
         cloudflare_spike = False
 
+    # Fetch both IP sources concurrently
     events: list[dict] = []
     fallback_active = False
 
     try:
-        ip_records = await fetch_abuseipdb_ips()
+        abuse_records, isc_records = await asyncio.gather(
+            fetch_abuseipdb_ips(),
+            fetch_sans_isc_ips(),
+        )
         last_poll["abuseipdb"] = datetime.now(timezone.utc).isoformat()
+        last_poll["sans_isc"]  = datetime.now(timezone.utc).isoformat()
 
-        if ip_records:
-            events = await _build_events(ip_records, cloudflare_spike)
+        # Merge and deduplicate: prefer AbuseIPDB record when same IP appears in both
+        seen: set[str] = set()
+        merged: list[dict] = []
+        for r in abuse_records:
+            ip = r.get("ipAddress", "")
+            if ip and ip not in seen:
+                seen.add(ip)
+                merged.append(r)
+        for r in isc_records:
+            ip = r.get("ipAddress", "")
+            if ip and ip not in seen:
+                seen.add(ip)
+                merged.append(r)
+
+        logger.info(
+            "Merged IP pool: %d AbuseIPDB + %d SANS ISC = %d unique",
+            len(abuse_records), len(isc_records), len(merged),
+        )
+
+        if merged:
+            events = await _build_events(merged, cloudflare_spike)
+            # Persist raw records for historical analysis — fire-and-forget
+            asyncio.create_task(asyncio.to_thread(save_snapshot, merged))
         else:
-            logger.warning("AbuseIPDB returned 0 DDoS records — activating fallback")
+            logger.warning("Both live sources returned 0 records — activating fallback")
             fallback_active = True
+
     except Exception as exc:
-        logger.error("AbuseIPDB pipeline error: %s", exc)
+        logger.error("IP fetch pipeline error: %s", exc)
         fallback_active = True
 
     if fallback_active:
@@ -232,20 +233,12 @@ async def poll_and_broadcast() -> None:
 
     # Compute stats from full deque window
     recent = list(event_deque)
-    high_score = [e for e in recent if e["custom"]["from"]["score"] > 0.70]
-    critical = [e for e in recent if e["custom"]["from"]["score"] > 0.85]
-
-    country_counts: dict[str, int] = {}
-    for e in high_score:
-        c = e["custom"]["from"]["country"]
-        country_counts[c] = country_counts.get(c, 0) + 1
-    top_countries = sorted(country_counts.items(), key=lambda x: x[1], reverse=True)[:3]
 
     current_stats = {
-        "threat_level": _compute_threat_level(cloudflare_spike, len(high_score), len(critical)),
+        "threat_level": compute_threat_level(recent, cloudflare_spike),
         "cloudflare_spike": cloudflare_spike,
         "attacks_per_min": len(events),
-        "top_countries": [{"country": c, "count": n} for c, n in top_countries],
+        "top_countries": compute_top_countries(recent),
         "total_unique_ips_10min": len(recent),
     }
 
@@ -277,6 +270,7 @@ async def _background_poller() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    init_db()
     logger.info("Sentinel starting — GeoLite2 DB available: %s", db_available())
     task = asyncio.create_task(_background_poller())
     yield
@@ -309,12 +303,20 @@ def health():
         "last_poll": last_poll,
         "event_deque_size": len(event_deque),
         "data_source": _data_source,
+        "db_snapshot_count": get_snapshot_count(),
     }
 
 
 @app.get("/api/stats")
 def api_stats():
     return current_stats
+
+
+@app.get("/api/history")
+async def api_history(range: str = "24h"):
+    if range not in ("24h", "7d"):
+        raise HTTPException(status_code=400, detail="range must be '24h' or '7d'")
+    return await build_history(range)
 
 
 @app.get("/api/feed")

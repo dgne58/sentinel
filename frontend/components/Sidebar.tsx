@@ -4,6 +4,8 @@ import { AnimatePresence, motion } from 'framer-motion'
 import type { AttackEvent } from '@/types'
 
 const CATEGORY_NAMES: Record<number, string> = {
+  1:  'DNS Compromise',
+  2:  'DNS Poisoning',
   3:  'Fraud Orders',
   4:  'DDoS Attack',
   5:  'FTP Brute-Force',
@@ -14,6 +16,7 @@ const CATEGORY_NAMES: Record<number, string> = {
   10: 'Web Spam',
   11: 'Email Spam',
   12: 'Blog Spam',
+  13: 'VPN IP',
   14: 'Port Scan',
   15: 'Hacking',
   16: 'SQL Injection',
@@ -24,6 +27,24 @@ const CATEGORY_NAMES: Record<number, string> = {
   21: 'Web App Attack',
   22: 'SSH',
   23: 'IoT Targeted',
+}
+
+const TYPE_COLORS: Record<string, string> = {
+  ddos:      '#EF4444',
+  botnet:    '#F97316',
+  intrusion: '#A855F7',
+  recon:     '#F59E0B',
+  proxy:     '#06B6D4',
+  other:     '#64748B',
+}
+
+const TYPE_LABELS: Record<string, string> = {
+  ddos:      'DDoS / Volumetric',
+  botnet:    'Botnet / C2',
+  intrusion: 'Intrusion / SSH',
+  recon:     'Recon / Scan',
+  proxy:     'Open Proxy',
+  other:     'Other',
 }
 
 function scoreBar(score: number) {
@@ -99,6 +120,28 @@ export default function Sidebar({ event, onClose }: SidebarProps) {
                   <p className="text-base font-mono font-semibold text-white mt-0.5">{from.ip}</p>
                 </div>
 
+                {from.attack_type && (
+                  <div>
+                    <span className="text-xs text-gray-500 uppercase tracking-wider">Attack Type</span>
+                    <div className="mt-1">
+                      <span
+                        className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-mono font-semibold"
+                        style={{
+                          color: TYPE_COLORS[from.attack_type] ?? TYPE_COLORS.other,
+                          backgroundColor: `${TYPE_COLORS[from.attack_type] ?? TYPE_COLORS.other}18`,
+                          border: `1px solid ${TYPE_COLORS[from.attack_type] ?? TYPE_COLORS.other}40`,
+                        }}
+                      >
+                        <span
+                          className="w-1.5 h-1.5 rounded-full shrink-0"
+                          style={{ backgroundColor: TYPE_COLORS[from.attack_type] ?? TYPE_COLORS.other }}
+                        />
+                        {TYPE_LABELS[from.attack_type] ?? from.attack_type}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 <div>
                   <span className="text-xs text-gray-500 uppercase tracking-wider">Threat Score</span>
                   <div className="mt-1">{scoreBar(from.score)}</div>
@@ -120,6 +163,13 @@ export default function Sidebar({ event, onClose }: SidebarProps) {
                 {to && (
                   <Row label="Nearest PoP" value={`${to.pop} — ${to.name}`} />
                 )}
+
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-xs text-gray-500 uppercase tracking-wider shrink-0">Source</span>
+                  <span className="text-xs font-mono text-slate-400">
+                    {from.source === 'sans_isc' ? 'SANS ISC / DShield' : 'AbuseIPDB'}
+                  </span>
+                </div>
 
                 <a
                   href={`https://www.abuseipdb.com/check/${from.ip}`}

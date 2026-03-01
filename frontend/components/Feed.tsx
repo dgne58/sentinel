@@ -13,13 +13,6 @@ function relativeTime(iso: string): string {
   return `${Math.floor(m / 60)}h ago`
 }
 
-function scoreColor(score: number): string {
-  if (score >= 0.95) return '#DC2626'
-  if (score >= 0.80) return '#EF4444'
-  if (score >= 0.65) return '#F97316'
-  return '#F59E0B'
-}
-
 interface FeedProps {
   feed: AttackEvent[]
   onEventClick: (event: AttackEvent) => void
@@ -61,20 +54,25 @@ export default function Feed({ feed, onEventClick }: FeedProps) {
           </div>
         ) : (
           feed.map((event, i) => {
-            const from  = event.custom.from
-            const to    = event.custom.to
-            const color = scoreColor(from.score)
-            const isHigh = from.score > 0.85
+            const from     = event.custom.from
+            const to       = event.custom.to
+            const arcColor = event.color.line.from
+            const isHigh   = from.score > 0.85
 
             return (
               <button
                 key={`${from.ip}-${i}`}
                 onClick={() => onEventClick(event)}
-                className={`w-full grid grid-cols-12 gap-2 text-xs font-mono px-2 py-1.5 rounded border transition-all duration-200 text-left cursor-pointer ${
-                  isHigh
-                    ? 'bg-red-500/5 border-red-500/20 text-red-200 hover:bg-red-500/10'
-                    : 'bg-slate-800/30 border-slate-800 text-slate-400 hover:bg-slate-800/60'
-                }`}
+                className="w-full grid grid-cols-12 gap-2 text-xs font-mono px-2 py-1.5 rounded border transition-all duration-200 text-left cursor-pointer"
+                style={isHigh ? {
+                  backgroundColor: `${arcColor}0d`,
+                  borderColor:     `${arcColor}33`,
+                  color:           '#e2e8f0',
+                } : {
+                  backgroundColor: 'rgba(30,41,59,0.3)',
+                  borderColor:     'rgb(30,41,59)',
+                  color:           'rgb(148,163,184)',
+                }}
               >
                 <div className="col-span-2 opacity-70 truncate self-center">
                   {relativeTime(from.last_reported)}
@@ -93,12 +91,12 @@ export default function Feed({ feed, onEventClick }: FeedProps) {
                       className="h-full rounded-full"
                       style={{
                         width: `${from.score * 100}%`,
-                        backgroundColor: color,
-                        boxShadow: `0 0 4px ${color}80`,
+                        backgroundColor: arcColor,
+                        boxShadow: `0 0 4px ${arcColor}80`,
                       }}
                     />
                   </div>
-                  <span className="text-[10px] font-mono leading-none" style={{ color }}>
+                  <span className="text-[10px] font-mono leading-none" style={{ color: arcColor }}>
                     {from.score.toFixed(2)}
                   </span>
                 </div>

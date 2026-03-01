@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AttackEvent, GlobeArc, Stats, ThreatLevel } from '@/types'
 
-const WS_URL = 'ws://localhost:8001/ws/attacks'
+const WS_URL = 'ws://localhost:8000/ws/attacks'
 const FEED_API = 'http://localhost:8000/api/feed'
 
 const DEFAULT_STATS: Stats = {
@@ -20,12 +20,14 @@ function parseLatLng(s: string): [number, number] {
   return [lat, lng]
 }
 
-export function useAttackStream() {
+export function useAttackStream(active: boolean = true) {
   const [arcs, setArcs] = useState<GlobeArc[]>([])
   const [feed, setFeed] = useState<AttackEvent[]>([])
   const [stats, setStats] = useState<Stats>(DEFAULT_STATS)
   const [selectedEvent, setSelectedEvent] = useState<AttackEvent | null>(null)
   const [isConnected, setIsConnected] = useState(false)
+  const activeRef = useRef(active)
+  useEffect(() => { activeRef.current = active }, [active])
 
   // Arc expiry cleanup — always active, never gated (§8.3)
   useEffect(() => {
@@ -67,31 +69,33 @@ export function useAttackStream() {
         }
 
         if (Array.isArray(data)) {
-          // Attack batch
-          for (const event of data as AttackEvent[]) {
-            const [startLat, startLng] = parseLatLng(event.object.from)
-            const [endLat, endLng] = parseLatLng(event.object.to)
+          // Attack batch — only update arcs/feed when live mode is active
+          if (activeRef.current) {
+            for (const event of data as AttackEvent[]) {
+              const [startLat, startLng] = parseLatLng(event.object.from)
+              const [endLat, endLng] = parseLatLng(event.object.to)
 
-            const arc: GlobeArc = {
-              id: `${event.custom.from.ip}-${Date.now()}-${Math.random()}`,
-              startLat,
-              startLng,
-              endLat,
-              endLng,
-              color: event.color.line.from,
-              expiry: Date.now() + event.timeout,
-              event,
-            }
+              const arc: GlobeArc = {
+                id: `${event.custom.from.ip}-${Date.now()}-${Math.random()}`,
+                startLat,
+                startLng,
+                endLat,
+                endLng,
+                color: event.color.line.from,
+                expiry: Date.now() + event.timeout,
+                event,
+              }
 
-            // Add arc, cap at 30, shift oldest
-            setArcs(prev => {
-              const next = [...prev, arc]
-              return next.length > 30 ? next.slice(next.length - 30) : next
-            })
+              // Add arc, cap at 30, shift oldest
+              setArcs(prev => {
+                const next = [...prev, arc]
+                return next.length > 30 ? next.slice(next.length - 30) : next
+              })
 
-            // Feed gets "table" events only, newest first, cap at 50
-            if (event.function === 'table') {
-              setFeed(prev => [event, ...prev].slice(0, 50))
+              // Feed gets "table" events only, newest first, cap at 50
+              if (event.function === 'table') {
+                setFeed(prev => [event, ...prev].slice(0, 50))
+              }
             }
           }
         } else if (

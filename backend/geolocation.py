@@ -8,6 +8,7 @@ development before the MaxMind download completes).
 """
 
 import logging
+from math import atan2, cos, radians, sin, sqrt
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -97,3 +98,76 @@ def _placeholder() -> dict:
         "isp": "Unknown",
         "geo_available": False,
     }
+
+
+# ── Cloudflare PoP destinations ────────────────────────────────────────────────
+
+POPS: list[dict] = [
+    {"pop": "SJC", "name": "San Jose, CA",  "lat": 37.3382,  "lng": -121.8863},
+    {"pop": "LHR", "name": "London, UK",    "lat": 51.5074,  "lng": -0.1278},
+    {"pop": "FRA", "name": "Frankfurt, DE", "lat": 50.1109,  "lng": 8.6821},
+    {"pop": "SIN", "name": "Singapore, SG", "lat": 1.3521,   "lng": 103.8198},
+    {"pop": "SYD", "name": "Sydney, AU",    "lat": -33.8688, "lng": 151.2093},
+]
+
+
+def _haversine(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    R = 6371.0
+    dlat = radians(lat2 - lat1)
+    dlng = radians(lng2 - lng1)
+    a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlng / 2) ** 2
+    return R * 2 * atan2(sqrt(a), sqrt(1 - a))
+
+
+def nearest_pop(lat: float, lng: float) -> dict:
+    """Return the geographically nearest Cloudflare PoP to the given coordinates."""
+    return min(POPS, key=lambda p: _haversine(lat, lng, p["lat"], p["lng"]))
+
+
+# ── Country centroids ───────────────────────────────────────────────────────────
+# ISO 3166-1 alpha-2 → (lat, lng) geographic centroid.
+# Used by analytics.py to place country-level arcs on the historical globe.
+# Covers the top ~40 most common DDoS attack origins and targets.
+
+COUNTRY_CENTROIDS: dict[str, tuple[float, float]] = {
+    "CN": (35.8617,  104.1954),
+    "US": (37.0902,  -95.7129),
+    "RU": (61.5240,  105.3188),
+    "BR": (-14.2350, -51.9253),
+    "IN": (20.5937,   78.9629),
+    "DE": (51.1657,   10.4515),
+    "FR": (46.2276,    2.2137),
+    "GB": (55.3781,   -3.4360),
+    "KR": (35.9078,  127.7669),
+    "NL": (52.1326,    5.2913),
+    "JP": (36.2048,  138.2529),
+    "UA": (48.3794,   31.1656),
+    "VN": (14.0583,  108.2772),
+    "ID": (-0.7893,  113.9213),
+    "TR": (38.9637,   35.2433),
+    "TW": (23.6978,  120.9605),
+    "AR": (-38.4161, -63.6167),
+    "MX": (23.6345, -102.5528),
+    "ZA": (-30.5595,  22.9375),
+    "PK": (30.3753,   69.3451),
+    "BD": (23.6850,   90.3563),
+    "IT": (41.8719,   12.5674),
+    "ES": (40.4637,   -3.7492),
+    "PL": (51.9194,   19.1451),
+    "RO": (45.9432,   24.9668),
+    "IR": (32.4279,   53.6880),
+    "TH": (15.8700,  100.9925),
+    "EG": (26.8206,   30.8025),
+    "HK": (22.3193,  114.1694),
+    "SG": ( 1.3521,  103.8198),
+    "CA": (56.1304,  -106.347),
+    "AU": (-25.2744,  133.775),
+    "NG": ( 9.0820,    8.6753),
+    "MY": ( 4.2105,  101.9758),
+    "PH": (12.8797,  121.7740),
+    "CZ": (49.8175,   15.4730),
+    "HU": (47.1625,   19.5033),
+    "BG": (42.7339,   25.4858),
+    "SK": (48.6690,   19.6990),
+    "AT": (47.5162,   14.5501),
+}
