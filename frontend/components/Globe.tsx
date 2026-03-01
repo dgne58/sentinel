@@ -1,10 +1,10 @@
 'use client'
 
 import createGlobe from 'cobe'
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import type { AttackEvent, GlobeArc, HistoricalArc, ViewMode } from '@/types'
 
-const ARC_SEGMENTS = 64
+const ARC_SEGMENTS = 48
 const ARC_ALTITUDE = 0.35
 
 // Cloudflare PoP destinations shown as fixed markers
@@ -108,7 +108,7 @@ interface GlobeProps {
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export default function Globe({ arcs, onArcClick, viewMode = 'live', historicalArcs = [] }: GlobeProps) {
+function Globe({ arcs, onArcClick, viewMode = 'live', historicalArcs = [] }: GlobeProps) {
   const containerRef      = useRef<HTMLDivElement>(null)
   const globeRef          = useRef<HTMLCanvasElement>(null)
   const overlayRef        = useRef<HTMLCanvasElement>(null)
@@ -231,14 +231,61 @@ export default function Globe({ arcs, onArcClick, viewMode = 'live', historicalA
       }
       if (drawing) ctx.stroke()
 
-      // Dot at attacker source
+      // Arrowhead at destination end (last visible segment, pointing direction of travel)
+      let arrowIdx = -1
+      for (let i = ARC_SEGMENTS; i > 0; i--) {
+        if (pts[i].visible && pts[i - 1].visible) { arrowIdx = i; break }
+      }
+      if (arrowIdx > 0) {
+        const tip = pts[arrowIdx]
+        const bk  = pts[arrowIdx - 1]
+        const dx  = tip.x - bk.x
+        const dy  = tip.y - bk.y
+        const mag = Math.hypot(dx, dy)
+        if (mag > 0) {
+          const nx = dx / mag
+          const ny = dy / mag
+          const al = 8 * dpr   // arrow length
+          const aw = 4 * dpr   // arrow half-width
+          ctx.beginPath()
+          ctx.moveTo(tip.x, tip.y)
+          ctx.lineTo(tip.x - nx * al - ny * aw, tip.y - ny * al + nx * aw)
+          ctx.lineTo(tip.x - nx * al + ny * aw, tip.y - ny * al - nx * aw)
+          ctx.closePath()
+          ctx.fillStyle   = arc.color
+          ctx.globalAlpha = 0.9
+          ctx.shadowColor = arc.color
+          ctx.shadowBlur  = 6 * dpr
+          ctx.fill()
+        }
+      }
+
+      // Attacker origin — outer pulse ring + bright white core
       const src = pts[0]
       if (src.visible) {
+        // Outer ring (marks attacker)
         ctx.beginPath()
-        ctx.arc(src.x, src.y, 3.5 * dpr, 0, Math.PI * 2)
+        ctx.arc(src.x, src.y, 9 * dpr, 0, Math.PI * 2)
+        ctx.strokeStyle = arc.color
+        ctx.lineWidth   = 1.5 * dpr
+        ctx.globalAlpha = 0.35
+        ctx.shadowBlur  = 0
+        ctx.stroke()
+
+        // Coloured mid fill
+        ctx.beginPath()
+        ctx.arc(src.x, src.y, 5 * dpr, 0, Math.PI * 2)
         ctx.fillStyle   = arc.color
+        ctx.globalAlpha = 0.3
+        ctx.fill()
+
+        // Bright white core
+        ctx.beginPath()
+        ctx.arc(src.x, src.y, 3 * dpr, 0, Math.PI * 2)
+        ctx.fillStyle   = '#ffffff'
         ctx.globalAlpha = 1
-        ctx.shadowBlur  = 10 * dpr
+        ctx.shadowColor = arc.color
+        ctx.shadowBlur  = 14 * dpr
         ctx.fill()
       }
     }
@@ -297,14 +344,61 @@ export default function Globe({ arcs, onArcClick, viewMode = 'live', historicalA
       }
       if (drawing) ctx.stroke()
 
-      // Dot at origin country centroid
+      // Arrowhead at destination end (last visible segment)
+      let hArrowIdx = -1
+      for (let i = ARC_SEGMENTS; i > 0; i--) {
+        if (pts[i].visible && pts[i - 1].visible) { hArrowIdx = i; break }
+      }
+      if (hArrowIdx > 0) {
+        const tip = pts[hArrowIdx]
+        const bk  = pts[hArrowIdx - 1]
+        const dx  = tip.x - bk.x
+        const dy  = tip.y - bk.y
+        const mag = Math.hypot(dx, dy)
+        if (mag > 0) {
+          const nx = dx / mag
+          const ny = dy / mag
+          const al = (5 + w * 4) * dpr   // scale arrow with weight
+          const aw = (2.5 + w * 2) * dpr
+          ctx.beginPath()
+          ctx.moveTo(tip.x, tip.y)
+          ctx.lineTo(tip.x - nx * al - ny * aw, tip.y - ny * al + nx * aw)
+          ctx.lineTo(tip.x - nx * al + ny * aw, tip.y - ny * al - nx * aw)
+          ctx.closePath()
+          ctx.fillStyle   = '#818cf8'
+          ctx.globalAlpha = 0.4 + w * 0.5
+          ctx.shadowColor = '#6366f1'
+          ctx.shadowBlur  = 4 * dpr
+          ctx.fill()
+        }
+      }
+
+      // Origin country — outer ring + bright white core (mirrors live arc styling)
       const src = pts[0]
       if (src.visible) {
+        // Outer ring
         ctx.beginPath()
-        ctx.arc(src.x, src.y, (2 + w * 2) * dpr, 0, Math.PI * 2)
+        ctx.arc(src.x, src.y, (7 + w * 3) * dpr, 0, Math.PI * 2)
+        ctx.strokeStyle = '#818cf8'
+        ctx.lineWidth   = 1.5 * dpr
+        ctx.globalAlpha = 0.2 + w * 0.2
+        ctx.shadowBlur  = 0
+        ctx.stroke()
+
+        // Coloured mid fill
+        ctx.beginPath()
+        ctx.arc(src.x, src.y, (4 + w * 2) * dpr, 0, Math.PI * 2)
         ctx.fillStyle   = '#818cf8'
+        ctx.globalAlpha = 0.2 + w * 0.3
+        ctx.fill()
+
+        // Bright white core
+        ctx.beginPath()
+        ctx.arc(src.x, src.y, (2 + w) * dpr, 0, Math.PI * 2)
+        ctx.fillStyle   = '#ffffff'
         ctx.globalAlpha = 0.6 + w * 0.4
-        ctx.shadowBlur  = 6 * dpr
+        ctx.shadowColor = '#6366f1'
+        ctx.shadowBlur  = 10 * dpr
         ctx.fill()
       }
     }
@@ -390,3 +484,5 @@ export default function Globe({ arcs, onArcClick, viewMode = 'live', historicalA
     </div>
   )
 }
+
+export default memo(Globe)

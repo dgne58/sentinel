@@ -1,5 +1,6 @@
 'use client'
 
+import { memo, useMemo, useCallback } from 'react'
 import {
   Area,
   AreaChart,
@@ -10,7 +11,7 @@ import {
   YAxis,
 } from 'recharts'
 import { AlertTriangle, Brain, Clock, Globe, Shield, TrendingUp } from 'lucide-react'
-import type { HistoryData, HistoryRange } from '@/types'
+import type { Anomaly, HistoryData, HistoryRange } from '@/types'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -40,16 +41,16 @@ function fmtDate(ts: string): string {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function SectionHeader({ icon: Icon, label }: { icon: React.ElementType; label: string }) {
+const SectionHeader = memo(function SectionHeader({ icon: Icon, label }: { icon: React.ElementType; label: string }) {
   return (
     <div className="flex items-center gap-2 mb-2">
       <Icon className="w-3.5 h-3.5 text-slate-500" />
       <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500">{label}</span>
     </div>
   )
-}
+})
 
-function HBar({ label, value, max, color = '#6366f1' }: {
+const HBar = memo(function HBar({ label, value, max, color = '#6366f1' }: {
   label: string
   value: number
   max: number
@@ -68,9 +69,9 @@ function HBar({ label, value, max, color = '#6366f1' }: {
       <span className="text-slate-500 w-10 text-right">{value.toFixed(1)}%</span>
     </div>
   )
-}
+})
 
-function LocationRow({ code, name, share, rank }: {
+const LocationRow = memo(function LocationRow({ code, name, share, rank }: {
   code: string; name: string; share: number; rank: number
 }) {
   return (
@@ -87,6 +88,33 @@ function LocationRow({ code, name, share, rank }: {
       <span className="text-slate-500 w-8 text-right">{Math.round(share * 100)}%</span>
     </div>
   )
+})
+
+// ── Volume tooltip — defined outside HistoryPanel to prevent component re-mounting on each render ──
+
+interface VolumeTooltipProps {
+  active?: boolean
+  payload?: { value?: number }[]
+  label?: string
+  anomalies: Anomaly[]
+  anomalySet: Set<string>
+}
+
+function VolumeTooltip({ active, payload, label, anomalies, anomalySet }: VolumeTooltipProps) {
+  if (!active || !payload?.length) return null
+  const isAnomaly = anomalySet.has(label ?? '')
+  const anomaly   = isAnomaly ? anomalies.find(a => a.timestamp === label) : undefined
+  return (
+    <div className="bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs font-mono">
+      <div className="text-slate-400 mb-1">{fmtTimestamp(label ?? '')}</div>
+      <div className="text-indigo-400">Volume: {payload[0]?.value?.toFixed(3)}</div>
+      {isAnomaly && anomaly && (
+        <div className="text-amber-400 mt-1">
+          ⚡ {anomaly.pct_above_baseline}% above baseline (z={anomaly.z_score})
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -97,30 +125,23 @@ interface HistoryPanelProps {
   onRangeChange: (r: HistoryRange) => void
 }
 
-export default function HistoryPanel({ data, range, onRangeChange }: HistoryPanelProps) {
-  const anomalySet = new Set(data.anomalies.map(a => a.timestamp))
+export default memo(function HistoryPanel({ data, range, onRangeChange }: HistoryPanelProps) {
+  const anomalySet = useMemo(
+    () => new Set(data.anomalies.map(a => a.timestamp)),
+    [data.anomalies]
+  )
 
-  // Volume chart tooltip
-  const VolumeTooltip = ({ active, payload, label }: any) => {
-    if (!active || !payload?.length) return null
-    const isAnomaly = anomalySet.has(label)
-    const anomaly   = data.anomalies.find(a => a.timestamp === label)
-    return (
-      <div className="bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs font-mono">
-        <div className="text-slate-400 mb-1">{fmtTimestamp(label)}</div>
-        <div className="text-indigo-400">Volume: {payload[0]?.value?.toFixed(3)}</div>
-        {isAnomaly && anomaly && (
-          <div className="text-amber-400 mt-1">
-            ⚡ {anomaly.pct_above_baseline}% above baseline (z={anomaly.z_score})
-          </div>
-        )}
-      </div>
-    )
-  }
+  // Stable tooltip renderer — avoids VolumeTooltip re-mounting on every HistoryPanel render
+  const renderTooltip = useCallback(
+    (props: any) => <VolumeTooltip {...props} anomalies={data.anomalies} anomalySet={anomalySet} />,
+    [data.anomalies, anomalySet]
+  )
 
   // Protocol/vector max for bar scaling
-  const protoMax  = Math.max(...Object.values(data.protocol),  1)
-  const vectorMax = Math.max(...Object.values(data.vector),    1)
+  const { protoMax, vectorMax } = useMemo(() => ({
+    protoMax:  Math.max(...Object.values(data.protocol),  1),
+    vectorMax: Math.max(...Object.values(data.vector),    1),
+  }), [data.protocol, data.vector])
 
   return (
     <div className="h-full flex flex-col gap-4 overflow-y-auto feed-scroll p-4">
@@ -188,7 +209,7 @@ export default function HistoryPanel({ data, range, onRangeChange }: HistoryPane
                   tickLine={false}
                   width={32}
                 />
-                <Tooltip content={<VolumeTooltip />} />
+                <Tooltip content={renderTooltip} />
                 {/* Anomaly reference lines */}
                 {data.anomalies.map(a => (
                   <ReferenceLine
@@ -373,4 +394,4 @@ export default function HistoryPanel({ data, range, onRangeChange }: HistoryPane
       )}
     </div>
   )
-}
+})

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import type { AttackEvent, GlobeArc, Stats, ThreatLevel } from '@/types'
+import type { AttackEvent, GlobeArc, Stats } from '@/types'
 
 const WS_URL = 'ws://localhost:8000/ws/attacks'
 const FEED_API = 'http://localhost:8000/api/feed'
@@ -29,13 +29,8 @@ export function useAttackStream(active: boolean = true) {
   const activeRef = useRef(active)
   useEffect(() => { activeRef.current = active }, [active])
 
-  // Arc expiry cleanup — always active, never gated (§8.3)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setArcs(prev => prev.filter(arc => Date.now() < arc.expiry))
-    }, 2000)
-    return () => clearInterval(interval)
-  }, [])
+  // No expiry cleanup — arcs are replaced wholesale each broadcast cycle,
+  // so they persist until the next batch arrives (never disappear mid-cycle).
 
   // WebSocket lifecycle
   useEffect(() => {
@@ -71,31 +66,36 @@ export function useAttackStream(active: boolean = true) {
         if (Array.isArray(data)) {
           // Attack batch — only update arcs/feed when live mode is active
           if (activeRef.current) {
+            const now = Date.now()
+            const newArcs: GlobeArc[] = []
+            const newFeedEvents: AttackEvent[] = []
+
             for (const event of data as AttackEvent[]) {
               const [startLat, startLng] = parseLatLng(event.object.from)
               const [endLat, endLng] = parseLatLng(event.object.to)
 
-              const arc: GlobeArc = {
-                id: `${event.custom.from.ip}-${Date.now()}-${Math.random()}`,
+              newArcs.push({
+                id: `${event.custom.from.ip}-${now}-${Math.random()}`,
                 startLat,
                 startLng,
                 endLat,
                 endLng,
                 color: event.color.line.from,
-                expiry: Date.now() + event.timeout,
                 event,
-              }
-
-              // Add arc, cap at 30, shift oldest
-              setArcs(prev => {
-                const next = [...prev, arc]
-                return next.length > 30 ? next.slice(next.length - 30) : next
               })
 
-              // Feed gets "table" events only, newest first, cap at 50
               if (event.function === 'table') {
-                setFeed(prev => [event, ...prev].slice(0, 50))
+                newFeedEvents.push(event)
               }
+            }
+
+            // Replace entire arc set with the new batch — arcs persist until
+            // the next broadcast, never expiring mid-cycle.
+            if (newArcs.length > 0) {
+              setArcs(newArcs.length > 30 ? newArcs.slice(-30) : newArcs)
+            }
+            if (newFeedEvents.length > 0) {
+              setFeed(prev => [...newFeedEvents, ...prev].slice(0, 50))
             }
           }
         } else if (

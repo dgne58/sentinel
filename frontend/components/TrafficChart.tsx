@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { Stats } from '@/types'
 
@@ -15,7 +15,7 @@ interface TrafficChartProps {
   highConfCount: number   // count of "table" (score > 0.7) events in current window
 }
 
-export default function TrafficChart({ stats, highConfCount }: TrafficChartProps) {
+export default memo(function TrafficChart({ stats, highConfCount }: TrafficChartProps) {
   const [data, setData] = useState<DataPoint[]>([])
 
   // Append a point every time stats update with real data.
@@ -111,4 +111,4 @@ export default function TrafficChart({ stats, highConfCount }: TrafficChartProps
       </div>
     </div>
   )
-}
+})

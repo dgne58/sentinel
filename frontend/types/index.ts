@@ -33,12 +33,12 @@ export interface GlobeArc {
   endLat: number
   endLng: number
   color: string
-  expiry: number
   event: AttackEvent
 }
 
 export interface TopCountry {
   country: string
+  country_code: string
   count: number
 }
 

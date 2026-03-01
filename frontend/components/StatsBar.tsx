@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { memo, useState, useEffect } from 'react'
 import { Shield } from 'lucide-react'
 import type { Stats, ThreatLevel, ViewMode } from '@/types'
 
@@ -18,14 +18,8 @@ const THREAT_STYLES: Record<ThreatLevel, { dot: string; text: string; ring: stri
   CRITICAL: { dot: 'bg-red-500 animate-pulse',          text: 'text-red-400',     ring: 'ring-red-500/40'     },
 }
 
-interface HeaderProps {
-  isConnected: boolean
-  stats?: Stats
-  viewMode: ViewMode
-  onModeChange: (m: ViewMode) => void
-}
-
-export default function Header({ isConnected, stats, viewMode, onModeChange }: HeaderProps) {
+// Isolated clock — ticks every second without re-rendering the full header.
+const LiveClock = memo(function LiveClock() {
   const [time, setTime] = useState('')
 
   useEffect(() => {
@@ -36,6 +30,22 @@ export default function Header({ isConnected, stats, viewMode, onModeChange }: H
     return () => clearInterval(t)
   }, [])
 
+  return (
+    <div className="text-right hidden md:block">
+      <div className="text-xs font-mono text-slate-300">{time}</div>
+      <div className="text-[10px] text-slate-600 font-mono hidden lg:block">UTC LOCAL</div>
+    </div>
+  )
+})
+
+interface HeaderProps {
+  isConnected: boolean
+  stats?: Stats
+  viewMode: ViewMode
+  onModeChange: (m: ViewMode) => void
+}
+
+export default memo(function Header({ isConnected, stats, viewMode, onModeChange }: HeaderProps) {
   const threat = stats ? THREAT_STYLES[stats.threat_level] : null
 
   return (
@@ -83,7 +93,7 @@ export default function Header({ isConnected, stats, viewMode, onModeChange }: H
               {stats.top_countries.slice(0, 3).map((c, i) => (
                 <span key={c.country} className="flex items-center gap-1 text-xs font-mono text-slate-400 shrink-0">
                   {i > 0 && <span className="text-slate-700">·</span>}
-                  <span>{countryFlag(c.country)}</span>
+                  <span>{countryFlag(c.country_code)}</span>
                   <span className="text-slate-300">{c.country}</span>
                   <span className="text-slate-600">{c.count}</span>
                 </span>
@@ -116,10 +126,7 @@ export default function Header({ isConnected, stats, viewMode, onModeChange }: H
 
       {/* Clock + connection */}
       <div className="flex items-center gap-5 shrink-0">
-        <div className="text-right hidden md:block">
-          <div className="text-xs font-mono text-slate-300">{time}</div>
-          <div className="text-[10px] text-slate-600 font-mono hidden lg:block">UTC LOCAL</div>
-        </div>
+        <LiveClock />
 
         <div className="flex items-center gap-1.5 text-xs font-mono">
           <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'}`} />
@@ -131,4 +138,4 @@ export default function Header({ isConnected, stats, viewMode, onModeChange }: H
 
     </header>
   )
-}
+})

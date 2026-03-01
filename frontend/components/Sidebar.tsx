@@ -1,5 +1,6 @@
 'use client'
 
+import { memo } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import type { AttackEvent } from '@/types'
 
@@ -82,7 +83,7 @@ interface SidebarProps {
   onClose: () => void
 }
 
-export default function Sidebar({ event, onClose }: SidebarProps) {
+export default memo(function Sidebar({ event, onClose }: SidebarProps) {
   const from = event?.custom.from
   const to   = event?.custom.to
 
@@ -186,4 +187,4 @@ export default function Sidebar({ event, onClose }: SidebarProps) {
       )}
     </AnimatePresence>
   )
-}
+})

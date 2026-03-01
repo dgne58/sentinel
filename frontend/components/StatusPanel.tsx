@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { AlertTriangle, Shield, Activity, Globe } from 'lucide-react'
 import type { Stats } from '@/types'
 
@@ -12,7 +13,7 @@ interface StatusPanelProps {
   stats: Stats
 }
 
-export default function StatusPanel({ stats }: StatusPanelProps) {
+export default memo(function StatusPanel({ stats }: StatusPanelProps) {
   const threatColor = THREAT_COLORS[stats.threat_level] ?? 'text-slate-400'
 
   return (
@@ -84,4 +85,4 @@ export default function StatusPanel({ stats }: StatusPanelProps) {
       </div>
     </div>
   )
-}
+})

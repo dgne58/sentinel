@@ -139,6 +139,7 @@ async def _build_events(ip_records: list[dict], cloudflare_spike: bool) -> list[
                     "attack_type": attack_type,
                     "source": record.get("source", "abuseipdb"),
                     "country": geo["country"],
+                    "country_code": geo.get("country_code", "XX"),
                     "city": geo["city"],
                     "isp": geo["isp"],
                     "reports": record.get("totalReports", 0),
@@ -191,14 +192,30 @@ async def poll_and_broadcast() -> None:
         last_poll["abuseipdb"] = datetime.now(timezone.utc).isoformat()
         last_poll["sans_isc"]  = datetime.now(timezone.utc).isoformat()
 
-        # Merge and deduplicate: prefer AbuseIPDB record when same IP appears in both
+        # Build ISC category lookup first so we can enrich overlapping AbuseIPDB records.
+        # AbuseIPDB /blacklist does NOT return categories (we default to [] = "other"),
+        # but SANS ISC provides *actual* observed categories [14, 18] for each IP.
+        # For IPs appearing in both sources, use ISC's categories — they are more
+        # accurate than leaving the AbuseIPDB record with an empty category list.
+        isc_cat_map: dict[str, list[int]] = {
+            r["ipAddress"]: r.get("categories", [])
+            for r in isc_records
+            if r.get("ipAddress")
+        }
+
         seen: set[str] = set()
         merged: list[dict] = []
+        isc_enriched = 0
         for r in abuse_records:
             ip = r.get("ipAddress", "")
             if ip and ip not in seen:
                 seen.add(ip)
-                merged.append(r)
+                rec = dict(r)
+                if ip in isc_cat_map:
+                    # Override the [4] placeholder with ISC's observed attack categories
+                    rec["categories"] = isc_cat_map[ip]
+                    isc_enriched += 1
+                merged.append(rec)
         for r in isc_records:
             ip = r.get("ipAddress", "")
             if ip and ip not in seen:
@@ -206,8 +223,8 @@ async def poll_and_broadcast() -> None:
                 merged.append(r)
 
         logger.info(
-            "Merged IP pool: %d AbuseIPDB + %d SANS ISC = %d unique",
-            len(abuse_records), len(isc_records), len(merged),
+            "Merged IP pool: %d AbuseIPDB + %d SANS ISC = %d unique (%d AbuseIPDB enriched with ISC categories)",
+            len(abuse_records), len(isc_records), len(merged), isc_enriched,
         )
 
         if merged:

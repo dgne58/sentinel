@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { memo, useEffect, useRef } from 'react'
 import { Activity } from 'lucide-react'
 import type { AttackEvent } from '@/types'
 
@@ -13,12 +13,73 @@ function relativeTime(iso: string): string {
   return `${Math.floor(m / 60)}h ago`
 }
 
+interface FeedRowProps {
+  event: AttackEvent
+  onEventClick: (event: AttackEvent) => void
+}
+
+// Memoized row — only re-renders when its specific event or the click handler changes.
+// Existing rows are skipped when a new event is prepended to the feed.
+const FeedRow = memo(function FeedRow({ event, onEventClick }: FeedRowProps) {
+  const from     = event.custom.from
+  const to       = event.custom.to
+  const arcColor = event.color.line.from
+  const isHigh   = from.score > 0.85
+
+  return (
+    <button
+      onClick={() => onEventClick(event)}
+      className="w-full grid grid-cols-12 gap-2 text-xs font-mono px-2 py-1.5 rounded border transition-all duration-200 text-left cursor-pointer"
+      style={isHigh ? {
+        backgroundColor: `${arcColor}0d`,
+        borderColor:     `${arcColor}33`,
+        color:           '#e2e8f0',
+      } : {
+        backgroundColor: 'rgba(30,41,59,0.3)',
+        borderColor:     'rgb(30,41,59)',
+        color:           'rgb(148,163,184)',
+      }}
+    >
+      <div className="col-span-2 opacity-70 truncate self-center">
+        {relativeTime(from.last_reported)}
+      </div>
+      <div className="col-span-3 truncate text-slate-300 self-center" title={from.ip}>
+        {from.ip}
+      </div>
+      <div className="col-span-3 truncate self-center" title={from.country}>
+        {from.country}
+      </div>
+
+      {/* Score bar + number */}
+      <div className="col-span-2 flex flex-col justify-center gap-0.5 px-0.5">
+        <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
+          <div
+            className="h-full rounded-full"
+            style={{
+              width: `${from.score * 100}%`,
+              backgroundColor: arcColor,
+              boxShadow: `0 0 4px ${arcColor}80`,
+            }}
+          />
+        </div>
+        <span className="text-[10px] font-mono leading-none" style={{ color: arcColor }}>
+          {from.score.toFixed(2)}
+        </span>
+      </div>
+
+      <div className="col-span-2 text-right text-slate-500 truncate self-center">
+        {to.pop}
+      </div>
+    </button>
+  )
+})
+
 interface FeedProps {
   feed: AttackEvent[]
   onEventClick: (event: AttackEvent) => void
 }
 
-export default function Feed({ feed, onEventClick }: FeedProps) {
+const Feed = memo(function Feed({ feed, onEventClick }: FeedProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -53,62 +114,17 @@ export default function Feed({ feed, onEventClick }: FeedProps) {
             Awaiting high-confidence events…
           </div>
         ) : (
-          feed.map((event, i) => {
-            const from     = event.custom.from
-            const to       = event.custom.to
-            const arcColor = event.color.line.from
-            const isHigh   = from.score > 0.85
-
-            return (
-              <button
-                key={`${from.ip}-${i}`}
-                onClick={() => onEventClick(event)}
-                className="w-full grid grid-cols-12 gap-2 text-xs font-mono px-2 py-1.5 rounded border transition-all duration-200 text-left cursor-pointer"
-                style={isHigh ? {
-                  backgroundColor: `${arcColor}0d`,
-                  borderColor:     `${arcColor}33`,
-                  color:           '#e2e8f0',
-                } : {
-                  backgroundColor: 'rgba(30,41,59,0.3)',
-                  borderColor:     'rgb(30,41,59)',
-                  color:           'rgb(148,163,184)',
-                }}
-              >
-                <div className="col-span-2 opacity-70 truncate self-center">
-                  {relativeTime(from.last_reported)}
-                </div>
-                <div className="col-span-3 truncate text-slate-300 self-center" title={from.ip}>
-                  {from.ip}
-                </div>
-                <div className="col-span-3 truncate self-center" title={from.country}>
-                  {from.country}
-                </div>
-
-                {/* Score bar + number */}
-                <div className="col-span-2 flex flex-col justify-center gap-0.5 px-0.5">
-                  <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full"
-                      style={{
-                        width: `${from.score * 100}%`,
-                        backgroundColor: arcColor,
-                        boxShadow: `0 0 4px ${arcColor}80`,
-                      }}
-                    />
-                  </div>
-                  <span className="text-[10px] font-mono leading-none" style={{ color: arcColor }}>
-                    {from.score.toFixed(2)}
-                  </span>
-                </div>
-
-                <div className="col-span-2 text-right text-slate-500 truncate self-center">
-                  {to.pop}
-                </div>
-              </button>
-            )
-          })
+          feed.map(event => (
+            <FeedRow
+              key={`${event.custom.from.ip}-${event.custom.from.last_reported}`}
+              event={event}
+              onEventClick={onEventClick}
+            />
+          ))
         )}
       </div>
     </div>
   )
-}
+})
+
+export default Feed

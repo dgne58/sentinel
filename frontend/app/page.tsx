@@ -1,7 +1,7 @@
 'use client'
 
 import dynamic from 'next/dynamic'
-import { useState } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import Feed from '@/components/Feed'
 import Header from '@/components/StatsBar'
 import Legend from '@/components/Legend'
@@ -10,7 +10,7 @@ import StatusPanel from '@/components/StatusPanel'
 import ThreatLevelBadge from '@/components/ThreatLevel'
 import { useAttackStream } from '@/hooks/useAttackStream'
 import { useHistory } from '@/hooks/useHistory'
-import type { HistoryRange, ViewMode } from '@/types'
+import type { AttackEvent, HistoryRange, ViewMode } from '@/types'
 
 // Both Globe and TrafficChart require browser APIs — client-only
 const Globe        = dynamic(() => import('@/components/Globe'),        { ssr: false })
@@ -32,8 +32,16 @@ export default function Page() {
 
   const { historyData, historyLoading, historyError } = useHistory(viewMode, historyRange)
 
-  const highConfCount = feed.filter(e => e.function === 'table').length
+  const highConfCount = useMemo(
+    () => feed.filter(e => e.function === 'table').length,
+    [feed]
+  )
   const isHistory = viewMode === 'history'
+
+  const handleArcClick    = useCallback((ev: AttackEvent) => setSelectedEvent(ev), [setSelectedEvent])
+  const handleEventClick  = useCallback((ev: AttackEvent) => setSelectedEvent(ev), [setSelectedEvent])
+  const handleSidebarClose = useCallback(() => setSelectedEvent(null), [setSelectedEvent])
+  const historicalArcs    = useMemo(() => historyData?.arcs ?? [], [historyData])
 
   return (
     <div className="h-screen bg-slate-950 text-slate-200 font-sans overflow-hidden flex flex-col">
@@ -50,9 +58,9 @@ export default function Page() {
           <div className="absolute inset-0 flex items-center justify-center p-4">
             <Globe
               arcs={arcs}
-              onArcClick={event => setSelectedEvent(event)}
+              onArcClick={handleArcClick}
               viewMode={viewMode}
-              historicalArcs={historyData?.arcs ?? []}
+              historicalArcs={historicalArcs}
             />
           </div>
 
@@ -118,14 +126,14 @@ export default function Page() {
                 <div className="flex-1 min-h-[200px]">
                   <Feed
                     feed={feed}
-                    onEventClick={event => setSelectedEvent(event)}
+                    onEventClick={handleEventClick}
                   />
                 </div>
               </div>
 
               <Sidebar
                 event={selectedEvent}
-                onClose={() => setSelectedEvent(null)}
+                onClose={handleSidebarClose}
               />
             </>
           )}

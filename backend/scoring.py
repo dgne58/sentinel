@@ -118,9 +118,13 @@ def compute_threat_level(events: list[dict], cloudflare_spike: bool) -> str:
 def compute_top_countries(events: list[dict], limit: int = 3) -> list[dict]:
     """Top N countries by count from high-confidence events (score > 0.70)."""
     counts: dict[str, int] = {}
+    codes:  dict[str, str] = {}   # country name → ISO 2-letter code
     for e in events:
-        if e["custom"]["from"]["score"] > 0.70:
-            c = e["custom"]["from"]["country"]
+        frm = e["custom"]["from"]
+        if frm["score"] > 0.70:
+            c = frm["country"]
             counts[c] = counts.get(c, 0) + 1
+            if c not in codes:
+                codes[c] = frm.get("country_code", "XX")
     top = sorted(counts.items(), key=lambda x: x[1], reverse=True)[:limit]
-    return [{"country": c, "count": cnt} for c, cnt in top]
+    return [{"country": c, "country_code": codes.get(c, "XX"), "count": cnt} for c, cnt in top]

@@ -151,12 +151,14 @@ async def fetch_abuseipdb_ips() -> list[dict]:
             resp.raise_for_status()
             records = resp.json().get("data", [])
 
-        # AbuseIPDB /blacklist does not return a categories field in the response
-        # body even though we filter with onlyCategories. Default to [4] (DDoS
-        # Attack) — the primary category we filter by — so arcs render as red
-        # rather than the grey "other" fallback. SANS ISC records set [14,18].
+        # AbuseIPDB /blacklist does NOT return a categories field in the response
+        # body even though we filter with onlyCategories — we genuinely don't know
+        # which specific category triggered each IP's inclusion.
+        # Default to [] (empty) so the frontend renders them as "other" (slate gray)
+        # rather than mislabelling every IP as DDoS red.  IPs that also appear in
+        # SANS ISC will have accurate categories injected by the merge step in main.py.
         for r in records:
-            r.setdefault("categories", [4])
+            r.setdefault("categories", [])
             r["source"] = "abuseipdb"
 
         logger.info("AbuseIPDB: %d records fetched", len(records))
