@@ -20,3 +20,6 @@ Claude.md
 .claude/
 .internal/
 backend/sentinel.db
+
+# Frontend env (local overrides — never commit)
+frontend/.env*.local

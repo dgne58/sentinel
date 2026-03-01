@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AttackEvent, GlobeArc, Stats } from '@/types'
 
-const WS_URL = 'ws://localhost:8000/ws/attacks'
-const FEED_API = 'http://localhost:8000/api/feed'
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:8000/ws/attacks'
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+const FEED_API = `${API_BASE}/api/feed`
 
 const DEFAULT_STATS: Stats = {
   type: 'stats',

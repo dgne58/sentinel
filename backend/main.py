@@ -301,9 +301,12 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Sentinel", version="2.0", lifespan=lifespan)
 
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000")
+_allowed_origins = [o.strip().rstrip("/") for o in _raw_origins.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
