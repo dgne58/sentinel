@@ -39,7 +39,7 @@ export default function Header({ isConnected, stats, viewMode, onModeChange }: H
   const threat = stats ? THREAT_STYLES[stats.threat_level] : null
 
   return (
-    <header className="h-14 border-b border-slate-800 bg-slate-950 flex items-center px-6 gap-6 shrink-0 z-50">
+    <header className="h-14 border-b border-slate-800 bg-slate-950 flex items-center px-3 md:px-6 gap-2 md:gap-5 shrink-0 z-50">
 
       {/* Brand */}
       <div className="flex items-center gap-3 shrink-0">
@@ -76,10 +76,10 @@ export default function Header({ isConnected, stats, viewMode, onModeChange }: H
               <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">/min</span>
             </div>
 
-            <div className="h-4 w-px bg-slate-800 shrink-0" />
+            <div className="h-4 w-px bg-slate-800 shrink-0 hidden lg:block" />
 
-            {/* Top 3 attacking countries */}
-            <div className="flex items-center gap-3 min-w-0 overflow-hidden">
+            {/* Top 3 attacking countries — hidden below lg to prevent header overflow */}
+            <div className="hidden lg:flex items-center gap-3 min-w-0 overflow-hidden">
               {stats.top_countries.slice(0, 3).map((c, i) => (
                 <span key={c.country} className="flex items-center gap-1 text-xs font-mono text-slate-400 shrink-0">
                   {i > 0 && <span className="text-slate-700">·</span>}
@@ -116,9 +116,9 @@ export default function Header({ isConnected, stats, viewMode, onModeChange }: H
 
       {/* Clock + connection */}
       <div className="flex items-center gap-5 shrink-0">
-        <div className="text-right hidden sm:block">
+        <div className="text-right hidden md:block">
           <div className="text-xs font-mono text-slate-300">{time}</div>
-          <div className="text-[10px] text-slate-600 font-mono">UTC LOCAL</div>
+          <div className="text-[10px] text-slate-600 font-mono hidden lg:block">UTC LOCAL</div>
         </div>
 
         <div className="flex items-center gap-1.5 text-xs font-mono">

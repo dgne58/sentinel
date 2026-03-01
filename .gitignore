@@ -3,6 +3,7 @@ backend/.env
 
 # 
 backend/GeoLite2-City.mmdb
+backend/sentinel.db
 
 # Python
 __pycache__/

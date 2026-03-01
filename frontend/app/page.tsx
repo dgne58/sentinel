@@ -87,8 +87,8 @@ export default function Page() {
           )}
         </div>
 
-        {/* Right panel */}
-        <div className="w-[440px] border-l border-slate-800 bg-slate-900/30 flex flex-col shrink-0 backdrop-blur-sm relative">
+        {/* Right panel — fluid width: 30% of viewport, clamped between 280px and 520px */}
+        <div className="w-[clamp(280px,30vw,520px)] border-l border-slate-800 bg-slate-900/30 flex flex-col shrink-0 backdrop-blur-sm relative">
           {isHistory ? (
             /* Historical mode — HistoryPanel fills the right panel */
             historyData ? (
@@ -112,7 +112,7 @@ export default function Page() {
               <ThreatLevelBadge level={stats.threat_level} />
 
               <div className="flex-1 p-4 flex flex-col gap-4 min-h-0 overflow-y-auto">
-                <div className="h-[200px] shrink-0">
+                <div className="h-[clamp(140px,18vh,220px)] shrink-0">
                   <TrafficChart stats={stats} highConfCount={highConfCount} />
                 </div>
                 <div className="flex-1 min-h-[200px]">

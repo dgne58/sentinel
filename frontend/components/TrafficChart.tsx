@@ -18,24 +18,16 @@ interface TrafficChartProps {
 export default function TrafficChart({ stats, highConfCount }: TrafficChartProps) {
   const [data, setData] = useState<DataPoint[]>([])
 
-  // Seed with empty history on mount
-  useEffect(() => {
-    const seed: DataPoint[] = Array.from({ length: 20 }, () => ({
-      time: '',
-      events: 0,
-      highConf: 0,
-    }))
-    setData(seed)
-  }, [])
-
-  // Append a point every time stats update with real data
+  // Append a point every time stats update with real data.
+  // No seed — the chart fills left-to-right naturally so lines
+  // aren't confined to the far right on startup.
   useEffect(() => {
     if (stats.attacks_per_min === 0 && highConfCount === 0) return
     const time = new Date().toLocaleTimeString([], {
       hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit',
     })
     setData(prev => [
-      ...prev.slice(1),
+      ...(prev.length >= 20 ? prev.slice(1) : prev),
       { time, events: stats.attacks_per_min, highConf: highConfCount },
     ])
   }, [stats.attacks_per_min, highConfCount]) // eslint-disable-line react-hooks/exhaustive-deps
