@@ -276,7 +276,7 @@ async def fetch_cloudflare_historical(endpoint: str, date_range: str) -> dict:
     # Map internal range names → Cloudflare-accepted dateRange values.
     # Cloudflare does NOT accept "24h"; it uses "1d" for a 1-day window.
     _CF_RANGE = {"24h": "1d", "12h": "12h", "7d": "7d"}
-    _CF_AGG   = {"24h": "1h", "12h": "1h",  "7d": "1d"}
+    _CF_AGG   = {"24h": "1h", "12h": "1h",  "7d": "1h"}
     cf_range = _CF_RANGE.get(date_range, date_range)
     agg      = _CF_AGG.get(date_range, "1h")
 

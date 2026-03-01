@@ -98,15 +98,19 @@ interface VolumeTooltipProps {
   label?: string
   anomalies: Anomaly[]
   anomalySet: Set<string>
+  range: HistoryRange
 }
 
-function VolumeTooltip({ active, payload, label, anomalies, anomalySet }: VolumeTooltipProps) {
+function VolumeTooltip({ active, payload, label, anomalies, anomalySet, range }: VolumeTooltipProps) {
   if (!active || !payload?.length) return null
   const isAnomaly = anomalySet.has(label ?? '')
   const anomaly   = isAnomaly ? anomalies.find(a => a.timestamp === label) : undefined
+  const timeLabel = range === '7d'
+    ? (() => { try { return new Date(label ?? '').toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) } catch { return label ?? '' } })()
+    : fmtTimestamp(label ?? '')
   return (
     <div className="bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs font-mono">
-      <div className="text-slate-400 mb-1">{fmtTimestamp(label ?? '')}</div>
+      <div className="text-slate-400 mb-1">{timeLabel}</div>
       <div className="text-indigo-400">Volume: {payload[0]?.value?.toFixed(3)}</div>
       {isAnomaly && anomaly && (
         <div className="text-amber-400 mt-1">
@@ -133,8 +137,8 @@ export default memo(function HistoryPanel({ data, range, onRangeChange }: Histor
 
   // Stable tooltip renderer — avoids VolumeTooltip re-mounting on every HistoryPanel render
   const renderTooltip = useCallback(
-    (props: any) => <VolumeTooltip {...props} anomalies={data.anomalies} anomalySet={anomalySet} />,
-    [data.anomalies, anomalySet]
+    (props: any) => <VolumeTooltip {...props} anomalies={data.anomalies} anomalySet={anomalySet} range={range} />,
+    [data.anomalies, anomalySet, range]
   )
 
   // Protocol/vector max for bar scaling
@@ -197,7 +201,7 @@ export default memo(function HistoryPanel({ data, range, onRangeChange }: Histor
                 </defs>
                 <XAxis
                   dataKey="timestamp"
-                  tickFormatter={fmtTimestamp}
+                  tickFormatter={range === '7d' ? fmtDate : fmtTimestamp}
                   tick={{ fontSize: 9, fill: '#475569', fontFamily: 'monospace' }}
                   axisLine={false}
                   tickLine={false}
