@@ -15,7 +15,7 @@ venv/
 node_modules/
 .next/
 
-# Claude
+# Claudee
 Claude.md
 .claude/
 .internal/
