@@ -28,7 +28,7 @@ load_dotenv()
 
 from analytics import build_history
 from geolocation import cache_size as geo_cache_size, db_available, nearest_pop, resolve_ip
-from ingestion import fetch_abuseipdb_ips, fetch_cloudflare_spike, fetch_sans_isc_ips
+from ingestion import fetch_abuseipdb_ips, fetch_cloudflare_spike, fetch_isp_batch, fetch_sans_isc_ips
 from manager import broadcast, connect, connection_count, disconnect
 from scoring import (
     BOTNET_CATS,
@@ -91,6 +91,11 @@ async def _build_events(ip_records: list[dict], cloudflare_spike: bool) -> list[
     """
     events: list[dict] = []
 
+    # Pre-fetch ISP data for all IPs in one batch (ip-api.com free tier).
+    # GeoLite2-City doesn't carry ISP/ASN — this fills the gap.
+    all_ips = [r.get("ipAddress", "").strip() for r in ip_records if r.get("ipAddress")]
+    isp_map = await fetch_isp_batch(all_ips)
+
     for record in ip_records:
         ip = record.get("ipAddress", "").strip()
         if not ip:
@@ -141,7 +146,7 @@ async def _build_events(ip_records: list[dict], cloudflare_spike: bool) -> list[
                     "country": geo["country"],
                     "country_code": geo.get("country_code", "XX"),
                     "city": geo["city"],
-                    "isp": geo["isp"],
+                    "isp": geo["isp"] if geo["isp"] != "Unknown" else isp_map.get(ip, "Unknown"),
                     "reports": record.get("totalReports", 0),
                     "distinct_reporters": record.get("numDistinctUsers", 0),
                     "categories": categories,

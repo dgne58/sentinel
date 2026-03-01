@@ -150,7 +150,9 @@ export default memo(function Sidebar({ event, onClose }: SidebarProps) {
 
                 <Row label="Location" value={`${from.city !== 'Unknown' ? from.city + ', ' : ''}${from.country}`} />
                 <Row label="ISP / ASN" value={from.isp !== 'Unknown' ? from.isp : '—'} />
-                <Row label="Reports" value={`${from.reports} from ${from.distinct_reporters} distinct reporters`} />
+                {(from.reports > 0 || from.distinct_reporters > 0) && (
+                  <Row label="Reports" value={`${from.reports} from ${from.distinct_reporters} distinct reporters`} />
+                )}
                 <Row
                   label="Categories"
                   value={

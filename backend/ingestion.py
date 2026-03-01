@@ -248,6 +248,38 @@ async def fetch_sans_isc_ips() -> list[dict]:
         return _isc_cache["data"] if _isc_cache["data"] is not None else []
 
 
+# ── ISP enrichment (ip-api.com, free, no key) ─────────────────────────────────
+
+_isp_cache: dict[str, str] = {}
+
+
+async def fetch_isp_batch(ips: list[str]) -> dict[str, str]:
+    """
+    Batch-fetch ISP/ASN names for a list of IPs via ip-api.com (free, no key).
+    Returns {ip: isp_string}. Session-local cache prevents re-querying the same IP.
+    Silently degrades on failure — callers treat missing entries as "Unknown".
+    """
+    uncached = [ip for ip in ips if ip not in _isp_cache]
+
+    _BATCH = 100  # ip-api.com batch limit
+    for i in range(0, len(uncached), _BATCH):
+        batch = uncached[i : i + _BATCH]
+        payload = [{"query": ip, "fields": "query,isp,org,as"} for ip in batch]
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post("http://ip-api.com/batch", json=payload)
+                resp.raise_for_status()
+                for entry in resp.json():
+                    ip_addr = entry.get("query", "")
+                    isp = entry.get("org") or entry.get("isp") or entry.get("as") or "Unknown"
+                    if ip_addr:
+                        _isp_cache[ip_addr] = isp
+        except Exception as exc:
+            logger.warning("ip-api.com ISP batch failed: %s", exc)
+
+    return {ip: _isp_cache.get(ip, "Unknown") for ip in ips}
+
+
 # ── Spike shortcut ─────────────────────────────────────────────────────────────
 
 def last_known_spike() -> bool:
