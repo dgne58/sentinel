@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import type { HistoryData, HistoryRange, ViewMode } from '@/types'
 
-const HISTORY_API = 'http://localhost:8000/api/history'
+const HISTORY_API = `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'}/api/history`
 
 export function useHistory(viewMode: ViewMode, historyRange: HistoryRange) {
   const [historyData, setHistoryData]     = useState<HistoryData | null>(null)
