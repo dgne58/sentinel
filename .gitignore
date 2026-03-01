@@ -2,8 +2,7 @@
 backend/.env
 
 # 
-backend/GeoLite2-City.mmdb
-backend/sentinel.db
+
 
 # Python
 __pycache__/
@@ -20,3 +19,4 @@ node_modules/
 Claude.md
 .claude/
 .internal/
+backend/sentinel.db
